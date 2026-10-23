@@ -1,0 +1,72 @@
+@import url("https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --ink-950: 248 30% 6%;
+    --ink-900: 249 26% 9%;
+    --ink-850: 249 22% 12%;
+    --ink-800: 249 19% 16%;
+    --ink-700: 250 16% 24%;
+    --haze: 250 14% 72%;
+
+    --vibe-violet: 258 92% 68%;
+    --vibe-violet-soft: 258 80% 76%;
+    --vibe-violet-deep: 262 62% 32%;
+    --vibe-lime: 148 74% 58%;
+    --vibe-coral: 8 92% 67%;
+    --vibe-sky: 197 92% 64%;
+
+    --danger: 2 84% 62%;
+    --success: 152 66% 50%;
+
+    --font-display: "Sora", "Segoe UI", system-ui, sans-serif;
+    --font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+    --radius: 1rem;
+  }
+
+  * {
+    @apply border-ink-800;
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-ink-950 text-white font-sans antialiased;
+    background-image:
+      radial-gradient(1100px 600px at 12% -10%, hsl(var(--vibe-violet) / 0.16), transparent 60%),
+      radial-gradient(900px 500px at 100% 0%, hsl(var(--vibe-coral) / 0.1), transparent 55%);
+    background-attachment: fixed;
+  }
+
+  ::selection {
+    background: hsl(var(--vibe-violet) / 0.4);
+  }
+
+  :focus-visible {
+    outline: 2px solid hsl(var(--vibe-violet));
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .vs-panel {
+    @apply rounded-3xl border border-ink-800/80 bg-ink-900/70 backdrop-blur-sm;
+  }
+
+  .vs-chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-ink-700/70 bg-ink-850/80 px-3 py-1 text-xs font-medium text-haze;
+  }
+
+  .vs-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--ink-700)) transparent;
+  }
+}

@@ -1,0 +1,1 @@
+"""Service layer: storage, video processing, ranking, voting, notifications, audit."""

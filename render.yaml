@@ -1,0 +1,129 @@
+# Render deployment blueprint for VibeSpace.
+# Deploy from the Render dashboard ("New → Blueprint") pointing at this repository.
+# Secrets (SECRET_KEY, S3 keys, SMTP password) are marked sync:false — set them once in the dashboard.
+
+services:
+  # ------------------------------------------------------------------ data
+  - type: postgres
+    name: vibespace-db
+    plan: basic
+    database: vibespace
+    maxRetentionDays: 7
+
+  - type: redis
+    name: vibespace-redis
+    plan: basic
+    ipAllowList: [] # internal access only
+
+  # ------------------------------------------------------------------ api
+  - type: web
+    name: vibespace-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    plan: starter
+    region: frankfurt
+    autoDeploy: true
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: SECRET_KEY
+        sync: false # set a long random value in the dashboard
+      - key: PORT
+        value: "8000"
+      # Paste the Postgres internal connection string with the scheme
+      # postgresql+psycopg:// (Render's default postgres:// is not accepted by SQLAlchemy).
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: vibespace-redis
+          property: connectionString
+      - key: CORS_ORIGINS
+        sync: false # your frontend URL, e.g. https://vibespace.onrender.com
+      - key: PUBLIC_APP_URL
+        sync: false
+      - key: BACKEND_URL
+        sync: false # e.g. https://vibespace-api.onrender.com
+      - key: TRUSTED_HOSTS
+        sync: false # your API hostname
+      # ---- S3-compatible object storage (required for uploads) ----
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_REGION
+        value: auto
+      - key: S3_ENDPOINT_URL
+        sync: false # e.g. R2/B2/MinIO endpoint; empty for AWS S3
+      - key: S3_PUBLIC_BASE_URL
+        sync: false # CDN/base URL, if any
+      # ---- SMTP (optional; without it dev-mode links are used) ----
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM_EMAIL
+        sync: false
+
+  # ------------------------------------------------------------------ worker
+  - type: worker
+    name: vibespace-worker
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    plan: starter
+    region: frankfurt
+    autoDeploy: true
+    dockerCommand: celery -A app.workers.celery_app worker -l info --concurrency 2
+    envVars:
+      # Same environment as the API — point DATABASE_URL/REDIS_URL/S3_*/SECRET_KEY
+      # at the same services created above.
+      - key: ENVIRONMENT
+        value: production
+      - key: SECRET_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: vibespace-redis
+          property: connectionString
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_REGION
+        value: auto
+      - key: S3_ENDPOINT_URL
+        sync: false
+      - key: S3_PUBLIC_BASE_URL
+        sync: false
+
+  # ------------------------------------------------------------------ frontend
+  - type: web
+    name: vibespace-frontend
+    runtime: static
+    autoDeploy: true
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: ./frontend/dist
+    pullRequestPreviewsEnabled: true
+    envVars:
+      - key: VITE_API_BASE_URL
+        sync: false # e.g. https://vibespace-api.onrender.com/api/v1
+      - key: VITE_WS_BASE_URL
+        sync: false # e.g. wss://vibespace-api.onrender.com/ws
+      - key: VITE_APP_NAME
+        value: VibeSpace
+    # SPA fallback so client-side routes resolve on hard refresh.
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
