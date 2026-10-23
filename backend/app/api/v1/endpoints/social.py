@@ -12,7 +12,8 @@ from app.api.deps import CurrentUser, DbSession, OptionalUser, PageWindow
 from app.api.v1.serializers import comment_out, video_out
 from app.core.errors import AppError, ConflictError, NotFoundError, PermissionDeniedError
 from app.models.enums import NotificationType, ReportTarget
-from app.models.social import Block, Comment, Like, Report, SavedVideo
+from app.models.moderation import Report
+from app.models.social import Block, Comment, Like, SavedVideo
 from app.models.user import User
 from app.models.video import Video
 from app.schemas.common import AckResponse, Page

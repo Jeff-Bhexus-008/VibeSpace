@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from app.models.enums import ReportStatus
 from app.models.moderation import AuditLog, ModerationAction
-from app.models.social import Report
 from app.models.user import User
 from tests.conftest import login, make_video
 

@@ -26,8 +26,7 @@ from app.models.enums import (
     ParticipantRole,
     ReportTarget,
 )
-from app.models.moderation import ModerationAction
-from app.models.social import Report
+from app.models.moderation import ModerationAction, Report
 from app.models.user import User
 from app.repositories.challenges import entries_for, load_users
 from app.schemas.challenge import (
