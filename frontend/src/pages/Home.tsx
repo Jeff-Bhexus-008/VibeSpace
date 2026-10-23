@@ -10,7 +10,7 @@ import { EmptyState, SectionTitle, Spinner } from "@/components/ui/Feedback";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
 import { compactNumber, titleCase } from "@/lib/utils";
-import type { Challenge, PublicUser, Video } from "@/types/api";
+import type { PublicUser, Video } from "@/types/api";
 
 interface TrendingPayload {
   videos: Video[];

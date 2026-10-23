@@ -71,7 +71,7 @@ export default function BattleDetail() {
   };
 
   const join = useMutation({
-    mutationFn: () => api.post(`/challenges/${challengeId}/join`),
+    mutationFn: () => api.post<{ message: string }>(`/challenges/${challengeId}/join`),
     onSuccess: (result: { message?: string }) => {
       setNotice(result.message ?? "Joined.");
       refreshBattle();
@@ -89,7 +89,8 @@ export default function BattleDetail() {
   });
 
   const invite = useMutation({
-    mutationFn: () => api.post(`/challenges/${challengeId}/invite`, undefined, { username: inviteUsername }),
+    mutationFn: () =>
+      api.post<{ message: string }>(`/challenges/${challengeId}/invite`, undefined, { username: inviteUsername }),
     onSuccess: (result: { message?: string }) => {
       setNotice(result.message ?? "Invitation sent.");
       setInviteUsername("");
@@ -183,7 +184,6 @@ export default function BattleDetail() {
 
   const data = battle.data;
   const isStaff = user?.role === "moderator" || user?.role === "admin";
-  const canManage = data.is_owner || isStaff;
   const live = data.status === "open" || data.status === "active" || data.status === "voting";
 
   return (
@@ -272,7 +272,7 @@ export default function BattleDetail() {
                       />
                     ) : (
                       <div className="grid aspect-video place-items-center bg-ink-850 text-haze">
-                        {entry.status === "processing" ? "Processing…" : "Preview unavailable"}
+                        Preview unavailable
                       </div>
                     )}
                     <div className="space-y-2 p-4">

@@ -19,7 +19,7 @@ from app.models.media import MediaAsset
 from app.models.social import Block, Follow
 from app.models.user import User, UserProfile
 from app.models.video import Video
-from app.repositories.videos import page_videos, owned_or_visible
+from app.repositories.videos import can_view_profile_content, page_videos, owned_or_visible
 from app.schemas.common import AckResponse, Page
 from app.schemas.social import FollowSuggestion
 from app.schemas.user import (
@@ -27,6 +27,7 @@ from app.schemas.user import (
     DeleteAccountRequest,
     FollowState,
     ProfileImageUpdate,
+    ProfileSettingsOut,
     ProfileUpdate,
     PublicUser,
 )
@@ -78,6 +79,20 @@ def _follow_state(db, viewer: User | None, target: User) -> dict:
 
 
 # --- static routes first: /users/me must not be swallowed by /users/{username} ---
+@router.get("/users/me/profile", response_model=ProfileSettingsOut)
+def get_my_profile_settings(user: CurrentUser) -> ProfileSettingsOut:
+    profile = user.profile
+    return ProfileSettingsOut(
+        display_name=profile.display_name if profile else user.username,
+        bio=profile.bio if profile else None,
+        location=profile.location if profile else None,
+        links=list(profile.links or []) if profile else [],
+        is_private=profile.is_private if profile else False,
+        allow_messages_from=profile.allow_messages_from if profile else "everyone",
+        topic_preferences=list(profile.topic_preferences or []) if profile else [],
+    )
+
+
 @router.get("/users/me/suggestions", response_model=Page[FollowSuggestion])
 def follow_suggestions(viewer: CurrentUser, db: DbSession, window: PageWindow) -> Page[FollowSuggestion]:
     following = select(Follow.followee_id).where(Follow.follower_id == viewer.id)
@@ -87,6 +102,7 @@ def follow_suggestions(viewer: CurrentUser, db: DbSession, window: PageWindow) -
         .where(
             User.id != viewer.id,
             User.is_suspended.is_(False),
+            UserProfile.is_private.is_(False),
             User.id.notin_(following),
             ~User.id.in_(select(Block.blocked_id).where(Block.blocker_id == viewer.id)),
         )
@@ -207,7 +223,10 @@ def delete_account(
 @router.get("/users/{username}", response_model=PublicUser)
 def get_profile(username: str, db: DbSession, viewer: OptionalUser) -> PublicUser:
     target = _by_username(db, username)
-    return public_user(target, viewer=viewer, **_follow_state(db, viewer, target))
+    result = public_user(target, viewer=viewer, **_follow_state(db, viewer, target))
+    if not can_view_profile_content(db, target.id, viewer):
+        return result.model_copy(update={"bio": None, "cover_url": None, "location": None, "links": []})
+    return result
 
 
 @router.get("/users/{username}/videos", response_model=Page[VideoOut])
@@ -229,6 +248,8 @@ def user_videos(username: str, db: DbSession, viewer: OptionalUser, window: Page
 @router.get("/users/{username}/followers", response_model=Page[PublicUser])
 def followers(username: str, db: DbSession, viewer: OptionalUser, window: PageWindow) -> Page[PublicUser]:
     target = _by_username(db, username)
+    if not can_view_profile_content(db, target.id, viewer):
+        raise NotFoundError("That profile is private.")
     stmt = (
         select(User)
         .join(Follow, Follow.follower_id == User.id)
@@ -243,6 +264,8 @@ def followers(username: str, db: DbSession, viewer: OptionalUser, window: PageWi
 @router.get("/users/{username}/following", response_model=Page[PublicUser])
 def following(username: str, db: DbSession, viewer: OptionalUser, window: PageWindow) -> Page[PublicUser]:
     target = _by_username(db, username)
+    if not can_view_profile_content(db, target.id, viewer):
+        raise NotFoundError("That profile is private.")
     stmt = (
         select(User)
         .join(Follow, Follow.followee_id == User.id)

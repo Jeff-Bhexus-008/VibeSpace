@@ -23,6 +23,16 @@ class ProfileUpdate(BaseModel):
     topic_preferences: list[str] | None = Field(default=None, max_length=12)
 
 
+class ProfileSettingsOut(BaseModel):
+    display_name: str | None = None
+    bio: str | None = None
+    location: str | None = None
+    links: list[str] = Field(default_factory=list)
+    is_private: bool = False
+    allow_messages_from: Literal["everyone", "followers", "nobody"] = "everyone"
+    topic_preferences: list[str] = Field(default_factory=list)
+
+
 class ProfileImageUpdate(BaseModel):
     """Key returned by the upload ticket flow (avatar/cover are images, stored in the same bucket)."""
 

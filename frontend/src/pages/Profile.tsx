@@ -82,6 +82,7 @@ export default function Profile() {
   }
 
   const data = profile.data;
+  const privateLocked = data.is_private && !data.is_self && data.is_following !== true;
   const shown = tab === "saved" ? saved.data?.items ?? [] : videos.data?.items ?? [];
   const loadingList = tab === "saved" ? saved.isLoading : videos.isLoading;
 
@@ -204,6 +205,8 @@ export default function Profile() {
         <div className="flex justify-center py-14">
           <Spinner className="h-7 w-7" />
         </div>
+      ) : privateLocked ? (
+        <EmptyState title="Private profile" description="Follow this creator to see their videos." />
       ) : shown.length > 0 ? (
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {shown.map((video) => (

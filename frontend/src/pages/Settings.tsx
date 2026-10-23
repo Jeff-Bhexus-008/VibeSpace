@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Image as ImageIcon, KeyRound, LogOut, Mail } from "lucide-react";
 
 import Avatar from "@/components/ui/Avatar";
@@ -13,6 +13,26 @@ import { useUpload } from "@/hooks/useUpload";
 import { api, ApiError } from "@/lib/api";
 import { errorMessage } from "@/lib/utils";
 
+interface ProfileSettings {
+  display_name: string | null;
+  bio: string | null;
+  location: string | null;
+  links: string[];
+  is_private: boolean;
+  allow_messages_from: "everyone" | "followers" | "nobody";
+  topic_preferences: string[];
+}
+
+interface ProfileDraft {
+  display_name: string;
+  bio: string;
+  location: string;
+  links: string;
+  is_private: boolean;
+  allow_messages_from: ProfileSettings["allow_messages_from"];
+  topic_preferences: string;
+}
+
 export default function Settings() {
   const { user, refresh, signOut } = useAuth();
   const navigate = useNavigate();
@@ -21,19 +41,29 @@ export default function Settings() {
   const coverInput = useRef<HTMLInputElement | null>(null);
   const avatarUpload = useUpload({ kind: "image", purpose: "avatar" });
   const coverUpload = useUpload({ kind: "image", purpose: "cover" });
+  const profileSettings = useQuery({
+    queryKey: ["profile-settings", user?.id],
+    queryFn: () => api.get<ProfileSettings>("/users/me/profile"),
+    enabled: Boolean(user),
+  });
 
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const [profile, setProfile] = useState({
-    display_name: user?.display_name ?? "",
-    bio: user?.bio ?? "",
-    location: "",
-    links: "",
-    is_private: false,
-    allow_messages_from: "everyone" as "everyone" | "followers" | "nobody",
-    topic_preferences: "",
-  });
+  const [profileDraft, setProfileDraft] = useState<ProfileDraft | null>(null);
+  const profile: ProfileDraft = profileDraft ?? {
+    display_name: profileSettings.data?.display_name ?? user?.display_name ?? "",
+    bio: profileSettings.data?.bio ?? user?.bio ?? "",
+    location: profileSettings.data?.location ?? "",
+    links: profileSettings.data?.links.join(" ") ?? "",
+    is_private: profileSettings.data?.is_private ?? false,
+    allow_messages_from: profileSettings.data?.allow_messages_from ?? "everyone",
+    topic_preferences: profileSettings.data?.topic_preferences.join(", ") ?? "",
+  };
+
+  function updateProfile(patch: Partial<ProfileDraft>) {
+    setProfileDraft((current) => ({ ...profile, ...current, ...patch }));
+  }
 
   const [passwords, setPasswords] = useState({ current: "", next: "" });
   const [deletePassword, setDeletePassword] = useState("");
@@ -66,7 +96,10 @@ export default function Settings() {
 
   const changePassword = useMutation({
     mutationFn: () =>
-      api.post("/auth/password/change", { current_password: passwords.current, new_password: passwords.next }),
+      api.post<{ message: string }>("/auth/password/change", {
+        current_password: passwords.current,
+        new_password: passwords.next,
+      }),
     onSuccess: (result: { message?: string }) => {
       setError(null);
       setStatus(result.message ?? "Password updated.");
@@ -89,7 +122,7 @@ export default function Settings() {
   });
 
   const signOutEverywhere = useMutation({
-    mutationFn: () => api.post("/auth/logout-all"),
+    mutationFn: () => api.post<{ message: string }>("/auth/logout-all"),
     onSuccess: async () => {
       await refresh();
       navigate("/login", { replace: true });
@@ -141,6 +174,7 @@ export default function Settings() {
       </header>
 
       {error ? <ErrorNote message={error} /> : null}
+      {profileSettings.isError ? <ErrorNote message={errorMessage(profileSettings.error)} /> : null}
       {status ? (
         <p className="rounded-2xl border border-lime/40 bg-lime/10 px-4 py-3 text-sm text-lime">{status}</p>
       ) : null}
@@ -202,16 +236,18 @@ export default function Settings() {
             <FieldLabel htmlFor="display_name">Display name</FieldLabel>
             <Input
               id="display_name"
+              disabled={!profileSettings.data}
               value={profile.display_name}
-              onChange={(event) => setProfile((previous) => ({ ...previous, display_name: event.target.value }))}
+              onChange={(event) => updateProfile({ display_name: event.target.value })}
             />
           </div>
           <div>
             <FieldLabel htmlFor="location">Location</FieldLabel>
             <Input
               id="location"
+              disabled={!profileSettings.data}
               value={profile.location}
-              onChange={(event) => setProfile((previous) => ({ ...previous, location: event.target.value }))}
+              onChange={(event) => updateProfile({ location: event.target.value })}
               placeholder="Casablanca, MA"
             />
           </div>
@@ -220,8 +256,9 @@ export default function Settings() {
           <FieldLabel htmlFor="bio">Bio</FieldLabel>
           <Textarea
             id="bio"
+              disabled={!profileSettings.data}
             value={profile.bio}
-            onChange={(event) => setProfile((previous) => ({ ...previous, bio: event.target.value }))}
+              onChange={(event) => updateProfile({ bio: event.target.value })}
             maxLength={500}
           />
         </div>
@@ -229,8 +266,9 @@ export default function Settings() {
           <FieldLabel htmlFor="links">Links</FieldLabel>
           <Input
             id="links"
+            disabled={!profileSettings.data}
             value={profile.links}
-            onChange={(event) => setProfile((previous) => ({ ...previous, links: event.target.value }))}
+            onChange={(event) => updateProfile({ links: event.target.value })}
             placeholder="https://yoursite.com https://github.com/you"
           />
           <p className="mt-1.5 text-xs text-haze">Up to five links, each starting with https://</p>
@@ -239,8 +277,9 @@ export default function Settings() {
           <FieldLabel htmlFor="topics">Topic interests</FieldLabel>
           <Input
             id="topics"
+            disabled={!profileSettings.data}
             value={profile.topic_preferences}
-            onChange={(event) => setProfile((previous) => ({ ...previous, topic_preferences: event.target.value }))}
+            onChange={(event) => updateProfile({ topic_preferences: event.target.value })}
             placeholder="dance, coding, fitness"
           />
         </div>
@@ -248,8 +287,9 @@ export default function Settings() {
           <label className="flex items-start gap-3 text-sm text-haze">
             <input
               type="checkbox"
+              disabled={!profileSettings.data}
               checked={profile.is_private}
-              onChange={(event) => setProfile((previous) => ({ ...previous, is_private: event.target.checked }))}
+              onChange={(event) => updateProfile({ is_private: event.target.checked })}
               className="mt-1 h-4 w-4 rounded border-ink-700 bg-ink-900 text-violet"
             />
             <span>
@@ -261,12 +301,10 @@ export default function Settings() {
             <FieldLabel htmlFor="messages">Who can message you</FieldLabel>
             <select
               id="messages"
+              disabled={!profileSettings.data}
               value={profile.allow_messages_from}
               onChange={(event) =>
-                setProfile((previous) => ({
-                  ...previous,
-                  allow_messages_from: event.target.value as typeof profile.allow_messages_from,
-                }))
+                updateProfile({ allow_messages_from: event.target.value as ProfileDraft["allow_messages_from"] })
               }
               className="w-full rounded-2xl border border-ink-700/70 bg-ink-900/80 px-4 py-3 text-sm"
             >
@@ -277,7 +315,7 @@ export default function Settings() {
           </div>
         </div>
         <div className="flex justify-end">
-          <Button loading={saveProfile.isPending} onClick={() => saveProfile.mutate()}>
+          <Button disabled={!profileSettings.data} loading={saveProfile.isPending} onClick={() => saveProfile.mutate()}>
             Save profile
           </Button>
         </div>

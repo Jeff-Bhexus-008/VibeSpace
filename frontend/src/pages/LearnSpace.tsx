@@ -28,24 +28,25 @@ export default function LearnSpace() {
   const [query, setQuery] = useState("");
   const [submitted, setSubmitted] = useState("");
 
-  const videos = useQuery({
+  const videos = useQuery<Page<Video>>({
     queryKey: ["learn", category, submitted],
-    queryFn: () =>
-      submitted
-        ? api.get<{ videos: Page<Video> }>("/search", {
+    queryFn: async () => {
+      if (submitted) {
+        const result = await api.get<{ videos: Page<Video> }>("/search", {
             q: submitted,
             type: "learn",
             learn_category: category || undefined,
             limit: 24,
-          })
-        : api.get<Page<Video>>("/feed", {
-            mode: "learn",
-            surface: "learn",
-            learn_category: category || undefined,
-            limit: 24,
-          }),
-    select: (data): Page<Video> =>
-      "videos" in data && data.videos ? (data.videos as Page<Video>) : (data as Page<Video>),
+        });
+        return result.videos;
+      }
+      return api.get<Page<Video>>("/feed", {
+        mode: "learn",
+        surface: "learn",
+        learn_category: category || undefined,
+        limit: 24,
+      });
+    },
   });
 
   return (

@@ -23,7 +23,6 @@ export default function Messages() {
   const [draft, setDraft] = useState("");
   const [newUsername, setNewUsername] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -53,10 +52,6 @@ export default function Messages() {
 
       {error ? <ErrorNote message={error} /> : null}
       {listError ? <ErrorNote message={listError} /> : null}
-      {notice ? (
-        <p className="rounded-2xl border border-lime/40 bg-lime/10 px-4 py-3 text-sm text-lime">{notice}</p>
-      ) : null}
-
       <div className="grid gap-6 lg:grid-cols-[20rem_1fr]">
         <div className="space-y-4">
           <Card className="space-y-3">

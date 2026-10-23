@@ -48,7 +48,7 @@ def feed(
     if mode not in FEED_MODES:
         raise AppError(f"Unknown feed mode. Choose one of: {', '.join(sorted(FEED_MODES))}.")
 
-    filters = video_public_filter()
+    filters = video_public_filter(viewer)
     if surface == "learn" or mode == "learn":
         filters.append(Video.is_learn_content.is_(True))
     if learn_category:
@@ -119,7 +119,7 @@ def trending(db: DbSession, viewer: OptionalUser) -> dict:
     videos = list(
         db.execute(
             select(Video)
-            .where(*video_public_filter(), func.coalesce(Video.published_at, Video.created_at) >= cutoff)
+            .where(*video_public_filter(viewer), func.coalesce(Video.published_at, Video.created_at) >= cutoff)
             .order_by((func.coalesce(Video.like_count, 0) + func.coalesce(Video.comment_count, 0)).desc())
             .limit(12)
         )
@@ -130,7 +130,7 @@ def trending(db: DbSession, viewer: OptionalUser) -> dict:
         db.execute(
             select(User)
             .join(UserProfile, UserProfile.user_id == User.id)
-            .where(User.is_suspended.is_(False))
+            .where(User.is_suspended.is_(False), UserProfile.is_private.is_(False))
             .order_by(UserProfile.follower_count.desc(), UserProfile.total_likes.desc())
             .limit(8)
         )
@@ -151,7 +151,7 @@ def trending(db: DbSession, viewer: OptionalUser) -> dict:
     learn = list(
         db.execute(
             select(Video)
-            .where(*video_public_filter(), Video.is_learn_content.is_(True))
+            .where(*video_public_filter(viewer), Video.is_learn_content.is_(True))
             .order_by(Video.published_at.desc().nullslast())
             .limit(6)
         )
@@ -192,7 +192,9 @@ def search(
     results: dict = {"query": q, "type": type}
 
     if type in {"all", "users"}:
-        users, users_cursor, users_more = search_users(db, query=q, cursor=window["cursor"], limit=window["limit"])
+        users, users_cursor, users_more = search_users(
+            db, query=q, viewer=viewer, cursor=window["cursor"], limit=window["limit"]
+        )
         results["users"] = Page(
             items=[public_user(user, viewer=viewer) for user in users],
             next_cursor=users_cursor,
@@ -203,6 +205,7 @@ def search(
         learn_only = type == "learn"
         videos, next_cursor, has_more = search_videos(
             db,
+            viewer=viewer,
             query=q,
             learn_only=learn_only,
             learn_category=learn_category,
@@ -280,7 +283,7 @@ def leaderboard(
         rows = db.execute(
             select(User)
             .join(UserProfile, UserProfile.user_id == User.id)
-            .where(User.is_suspended.is_(False))
+            .where(User.is_suspended.is_(False), UserProfile.is_private.is_(False))
             .order_by(UserProfile.follower_count.desc(), UserProfile.total_likes.desc())
             .limit(limit)
         ).scalars().unique()
@@ -303,7 +306,7 @@ def leaderboard(
         rows = db.execute(
             select(Video, User)
             .join(User, User.id == Video.owner_id)
-            .where(*video_public_filter(), func.coalesce(Video.published_at, Video.created_at) >= cutoff)
+            .where(*video_public_filter(viewer), func.coalesce(Video.published_at, Video.created_at) >= cutoff)
             .order_by(Video.like_count.desc(), Video.view_count.desc())
             .limit(limit)
         ).all()

@@ -18,7 +18,7 @@ from app.models.enums import MediaStatus, VideoStatus, VideoVisibility
 from app.models.social import Comment, Like, SavedVideo, ShareEvent
 from app.models.user import User, UserProfile
 from app.models.video import Video, VideoViewEvent
-from app.repositories.videos import owned_or_visible, page_videos
+from app.repositories.videos import can_view_profile_content, owned_or_visible, page_videos
 from app.schemas.common import AckResponse, Page
 from app.schemas.video import VideoCreate, VideoOut, VideoUpdate, ViewReport
 from app.services import storage
@@ -37,8 +37,10 @@ def _load_video(db: Session, video_id: uuid.UUID) -> Video:
     return video
 
 
-def _assert_can_view(video: Video, viewer: User | None) -> None:
+def _assert_can_view(db: Session, video: Video, viewer: User | None) -> None:
     owner = viewer is not None and viewer.id == video.owner_id
+    if not can_view_profile_content(db, video.owner_id, viewer):
+        raise NotFoundError("That profile is private.")
     if video.is_removed and not owner and (viewer is None or viewer.role.value not in {"moderator", "admin"}):
         raise NotFoundError("That video is no longer available.")
     if video.status != VideoStatus.ready and not owner:
@@ -94,7 +96,7 @@ def saved_videos(user: CurrentUser, db: DbSession, window: PageWindow) -> Page[V
             .limit(window["limit"])
         ).scalars()
     )
-    filters = [Video.id.in_(video_ids)] if video_ids else [Video.id.is_(None)]
+    filters = owned_or_visible(user) + ([Video.id.in_(video_ids)] if video_ids else [Video.id.is_(None)])
     videos, _, _ = page_videos(db, filters=filters, cursor=None, limit=window["limit"])
     return Page(items=video_items(db, videos, user), has_more=False)
 
@@ -151,7 +153,7 @@ def create_video(payload: VideoCreate, user: CurrentUser, db: DbSession) -> Vide
 @router.get("/{video_id}", response_model=VideoOut)
 def get_video(video_id: uuid.UUID, db: DbSession, viewer: OptionalUser) -> VideoOut:
     video = _load_video(db, video_id)
-    _assert_can_view(video, viewer)
+    _assert_can_view(db, video, viewer)
 
     liked = saved = None
     if viewer is not None:
@@ -240,7 +242,7 @@ def record_view(
 ) -> ViewReport:
     """One counted view per viewer per 30 minutes — refreshing the page adds nothing."""
     video = _load_video(db, video_id)
-    _assert_can_view(video, viewer)
+    _assert_can_view(db, video, viewer)
 
     identity = (
         f"user:{viewer.id}"
@@ -291,7 +293,7 @@ def record_share(
     video_id: uuid.UUID, db: DbSession, viewer: OptionalUser, channel: str = "link"
 ) -> dict:
     video = _load_video(db, video_id)
-    _assert_can_view(video, viewer)
+    _assert_can_view(db, video, viewer)
     db.add(ShareEvent(video_id=video.id, user_id=viewer.id if viewer else None, channel=channel[:24]))
     db.execute(update(Video).where(Video.id == video.id).values(share_count=Video.share_count + 1))
     record_creator_event(db, creator_id=video.owner_id, event_type="share", video_id=video.id)

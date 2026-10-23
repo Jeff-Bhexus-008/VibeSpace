@@ -35,6 +35,7 @@ function readCookie(name: string): string | null {
 
 const UNSAFE = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const NO_REFRESH = ["/auth/login", "/auth/register", "/auth/refresh", "/auth/password"];
+let responseCsrfToken: string | null = null;
 
 interface RequestOptions {
   method?: string;
@@ -42,6 +43,7 @@ interface RequestOptions {
   query?: Record<string, string | number | boolean | undefined | null>;
   signal?: AbortSignal;
   skipRefresh?: boolean;
+  skipCsrfRetry?: boolean;
 }
 
 function buildUrl(path: string, query?: RequestOptions["query"]): string {
@@ -71,7 +73,7 @@ export async function rawRequest<T = Json>(path: string, options: RequestOptions
 
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
   if (UNSAFE.has(method)) {
-    const token = readCookie("vs_csrf");
+    const token = readCookie("vs_csrf") ?? responseCsrfToken;
     if (token) headers["X-CSRF-Token"] = token;
   }
 
@@ -91,6 +93,22 @@ export async function rawRequest<T = Json>(path: string, options: RequestOptions
   }
 
   const payload = await parseResponse(response);
+  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+    const token = (payload as { csrf_token?: unknown }).csrf_token;
+    if (typeof token === "string" && token) responseCsrfToken = token;
+  }
+
+  const envelope = payload as { error?: { details?: { hint?: string } } } | null;
+  if (
+    response.status === 403 &&
+    !options.skipCsrfRetry &&
+    envelope?.error?.details?.hint === "Send the vs_csrf cookie value back in the X-CSRF-Token header."
+  ) {
+    const refreshed = await tryRefresh();
+    if (refreshed && (readCookie("vs_csrf") || responseCsrfToken)) {
+      return rawRequest<T>(path, { ...options, skipCsrfRetry: true });
+    }
+  }
 
   if (!response.ok) {
     const envelope = payload as { error?: { code?: string; message?: string; details?: Record<string, unknown> } };

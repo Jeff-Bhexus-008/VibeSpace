@@ -155,6 +155,41 @@ def test_save_and_report(api):
     assert duplicate.status_code in {200, 201}
 
 
+def test_private_profile_settings_and_content_visibility(api):
+    client, db = api["client"], api["db"]
+    creator, viewer = api["creator"], api["viewer"]
+    creator.profile.is_private = True
+    creator.profile.bio = "Private biography"
+    db.commit()
+    video = make_video(db, creator)
+
+    hidden_profile = client.get(f"/api/v1/users/{creator.username}")
+    assert hidden_profile.status_code == 200
+    assert hidden_profile.json()["bio"] is None
+
+    hidden_videos = client.get(f"/api/v1/users/{creator.username}/videos")
+    assert hidden_videos.status_code == 200
+    assert hidden_videos.json()["items"] == []
+    assert client.get(f"/api/v1/videos/{video.id}").status_code == 404
+    search = client.get("/api/v1/search", params={"q": video.title, "type": "videos"})
+    assert search.json()["videos"]["items"] == []
+
+    headers = login(client, viewer)
+    settings = client.get("/api/v1/users/me/profile", headers=headers)
+    assert settings.status_code == 200
+    assert settings.json()["is_private"] is False
+
+    followed = client.post(f"/api/v1/users/{creator.username}/follow", headers=headers)
+    assert followed.status_code == 200
+    assert client.get(f"/api/v1/users/{creator.username}").json()["bio"] is None
+
+    followed_profile = client.get(f"/api/v1/users/{creator.username}", headers=headers)
+    assert followed_profile.json()["bio"] == "Private biography"
+    followed_videos = client.get(f"/api/v1/users/{creator.username}/videos", headers=headers)
+    assert [item["id"] for item in followed_videos.json()["items"]] == [str(video.id)]
+    assert client.get(f"/api/v1/videos/{video.id}", headers=headers).status_code == 200
+
+
 def test_owner_only_edits_and_unverified_cannot_publish(api):
     client, db = api["client"], api["db"]
     creator = api["creator"]

@@ -5,21 +5,57 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Select, Text, func, or_, select, tuple_
+from sqlalchemy import Select, Text, exists, func, or_, select, tuple_
 from sqlalchemy.orm import Session
 
 from app.core.pagination import encode_cursor
 from app.models.enums import LearnCategory, VideoStatus, VideoVisibility
-from app.models.social import Like, SavedVideo
+from app.models.social import Follow, Like, SavedVideo
 from app.models.user import User, UserProfile
 from app.models.video import Video
 
 
-def public_filter() -> list:
+def private_profile_filter(viewer: User | None):
+    private_profile = exists(
+        select(UserProfile.user_id).where(
+            UserProfile.user_id == Video.owner_id,
+            UserProfile.is_private.is_(True),
+        )
+    )
+    if viewer is None:
+        return ~private_profile
+    if viewer.role.value in {"moderator", "admin"}:
+        return True
+    following = exists(
+        select(Follow.id).where(Follow.follower_id == viewer.id, Follow.followee_id == Video.owner_id)
+    )
+    return or_(~private_profile, Video.owner_id == viewer.id, following)
+
+
+def can_view_profile_content(db: Session, owner_id: uuid.UUID, viewer: User | None) -> bool:
+    if viewer is not None and (viewer.id == owner_id or viewer.role.value in {"moderator", "admin"}):
+        return True
+    is_private = db.execute(
+        select(UserProfile.is_private).where(UserProfile.user_id == owner_id)
+    ).scalar_one_or_none()
+    if not is_private:
+        return True
+    if viewer is None:
+        return False
+    return (
+        db.execute(
+            select(Follow.id).where(Follow.follower_id == viewer.id, Follow.followee_id == owner_id)
+        ).scalar_one_or_none()
+        is not None
+    )
+
+
+def public_filter(viewer: User | None = None) -> list:
     return [
         Video.status == VideoStatus.ready,
         Video.visibility == VideoVisibility.public,
         Video.is_removed.is_(False),
+        private_profile_filter(viewer),
     ]
 
 
@@ -36,6 +72,7 @@ def owned_or_visible(viewer: User | None) -> list:
         ),
         # Only the owner may see private videos.
         or_(Video.visibility != VideoVisibility.private, Video.owner_id == viewer.id),
+        private_profile_filter(viewer),
     ]
 
 
@@ -124,6 +161,7 @@ def load_authors(db: Session, owner_ids: list[uuid.UUID]) -> dict[uuid.UUID, Use
 def search_videos(
     db: Session,
     *,
+    viewer: User | None,
     query: str,
     learn_only: bool,
     learn_category: LearnCategory | None,
@@ -131,7 +169,7 @@ def search_videos(
     limit: int,
 ) -> tuple[list[Video], str | None, bool]:
     pattern = f"%{query.lower()}%"
-    filters = public_filter() + [
+    filters = public_filter(viewer) + [
         or_(
             func.lower(Video.title).like(pattern),
             func.lower(func.coalesce(Video.description, "")).like(pattern),
@@ -145,13 +183,25 @@ def search_videos(
     return page_videos(db, filters=filters, cursor=cursor, limit=limit, order_by_published=True)
 
 
-def search_users(db: Session, *, query: str, cursor, limit: int) -> tuple[list[User], str | None, bool]:
+def search_users(
+    db: Session, *, query: str, viewer: User | None, cursor, limit: int
+) -> tuple[list[User], str | None, bool]:
     pattern = f"%{query.lower()}%"
+    profile_visible = UserProfile.is_private.is_not(True)
+    if viewer is not None:
+        profile_visible = or_(
+            profile_visible,
+            User.id == viewer.id,
+            exists(
+                select(Follow.id).where(Follow.follower_id == viewer.id, Follow.followee_id == User.id)
+            ),
+        )
     stmt = (
         select(User)
         .join(UserProfile, UserProfile.user_id == User.id, isouter=True)
         .where(
             User.is_suspended.is_(False),
+            profile_visible,
             or_(
                 func.lower(User.username).like(pattern),
                 func.lower(func.coalesce(UserProfile.display_name, "")).like(pattern),

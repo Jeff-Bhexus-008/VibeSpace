@@ -26,16 +26,19 @@ from app.schemas.social import (
     SaveRequest,
     SaveState,
 )
+from app.repositories.videos import can_view_profile_content
 from app.services.audit import record_audit, record_creator_event
 from app.services.notifications import create_notification
 
 router = APIRouter(tags=["social"])
 
 
-def _video(db, video_id: uuid.UUID) -> Video:
+def _video(db, video_id: uuid.UUID, viewer: User | None = None) -> Video:
     video = db.get(Video, video_id)
     if video is None or video.is_removed:
         raise NotFoundError("That video is not available.")
+    if not can_view_profile_content(db, video.owner_id, viewer):
+        raise NotFoundError("That profile is private.")
     return video
 
 
@@ -61,7 +64,7 @@ def _blocked_pair(db, first_id, second_id) -> bool:
 # --- likes --------------------------------------------------------------------
 @router.post("/videos/{video_id}/like", response_model=LikeState)
 def like_video(video_id: uuid.UUID, user: CurrentUser, db: DbSession) -> LikeState:
-    video = _video(db, video_id)
+    video = _video(db, video_id, user)
     exists = db.execute(
         select(Like.id).where(Like.user_id == user.id, Like.video_id == video.id)
     ).scalar_one_or_none()
@@ -91,7 +94,7 @@ def like_video(video_id: uuid.UUID, user: CurrentUser, db: DbSession) -> LikeSta
 
 @router.delete("/videos/{video_id}/like", response_model=LikeState)
 def unlike_video(video_id: uuid.UUID, user: CurrentUser, db: DbSession) -> LikeState:
-    video = _video(db, video_id)
+    video = _video(db, video_id, user)
     result = db.execute(delete(Like).where(Like.user_id == user.id, Like.video_id == video.id))
     if result.rowcount:
         db.execute(
@@ -113,7 +116,7 @@ def list_comments(
     window: PageWindow,
     include_replies: bool = False,
 ) -> Page[CommentOut]:
-    video = _video(db, video_id)
+    video = _video(db, video_id, viewer)
     stmt = select(Comment, User).join(User, User.id == Comment.author_id).where(Comment.video_id == video.id)
     if not include_replies:
         stmt = stmt.where(Comment.parent_id.is_(None))
@@ -127,7 +130,7 @@ def list_comments(
 
 @router.post("/videos/{video_id}/comments", response_model=CommentOut, status_code=status.HTTP_201_CREATED)
 def create_comment(video_id: uuid.UUID, payload: CommentCreate, user: CurrentUser, db: DbSession) -> CommentOut:
-    video = _video(db, video_id)
+    video = _video(db, video_id, user)
     if not video.allow_comments:
         raise AppError("Comments are turned off for this video.")
 
@@ -178,6 +181,7 @@ def list_replies(
     comment_id: uuid.UUID, db: DbSession, viewer: OptionalUser, window: PageWindow
 ) -> Page[CommentOut]:
     parent = _comment(db, comment_id)
+    _video(db, parent.video_id, viewer)
     stmt = (
         select(Comment, User)
         .join(User, User.id == Comment.author_id)
@@ -195,6 +199,7 @@ def list_replies(
 @router.patch("/comments/{comment_id}", response_model=CommentOut)
 def update_comment(comment_id: uuid.UUID, payload: CommentUpdate, user: CurrentUser, db: DbSession) -> CommentOut:
     comment = _comment(db, comment_id)
+    _video(db, comment.video_id, user)
     if comment.author_id != user.id:
         raise PermissionDeniedError("You can only edit your own comments.")
     comment.body = payload.body.strip()
@@ -206,6 +211,7 @@ def update_comment(comment_id: uuid.UUID, payload: CommentUpdate, user: CurrentU
 @router.delete("/comments/{comment_id}", response_model=AckResponse)
 def delete_comment(comment_id: uuid.UUID, user: CurrentUser, db: DbSession) -> AckResponse:
     comment = _comment(db, comment_id)
+    _video(db, comment.video_id, user)
     is_staff = user.role.value in {"moderator", "admin"}
     if comment.author_id != user.id and not is_staff:
         raise PermissionDeniedError("You can only delete your own comments.")
@@ -243,7 +249,7 @@ def delete_comment(comment_id: uuid.UUID, user: CurrentUser, db: DbSession) -> A
 # --- saves --------------------------------------------------------------------
 @router.post("/videos/{video_id}/save", response_model=SaveState)
 def save_video(video_id: uuid.UUID, payload: SaveRequest, user: CurrentUser, db: DbSession) -> SaveState:
-    video = _video(db, video_id)
+    video = _video(db, video_id, user)
     existing = db.execute(
         select(SavedVideo).where(SavedVideo.user_id == user.id, SavedVideo.video_id == video.id)
     ).scalar_one_or_none()
@@ -263,7 +269,7 @@ def save_video(video_id: uuid.UUID, payload: SaveRequest, user: CurrentUser, db:
 
 @router.delete("/videos/{video_id}/save", response_model=SaveState)
 def unsave_video(video_id: uuid.UUID, user: CurrentUser, db: DbSession) -> SaveState:
-    video = _video(db, video_id)
+    video = _video(db, video_id, user)
     result = db.execute(delete(SavedVideo).where(SavedVideo.user_id == user.id, SavedVideo.video_id == video.id))
     if result.rowcount:
         db.execute(
