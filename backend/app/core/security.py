@@ -84,12 +84,20 @@ def _cookie_secure() -> bool:
     return settings.is_production
 
 
+def _cookie_samesite() -> str:
+    # Production is a cross-site deployment: the SPA is served from Vercel while
+    # the API lives on Render, so cookies must use "None" (with Secure) or
+    # browsers will refuse to attach them to cross-site XHR. Local development
+    # stays on "lax".
+    return "none" if settings.is_production else "lax"
+
+
 def set_auth_cookies(response, access_token: str, refresh_token: str, csrf_token: str) -> None:
     """HttpOnly session cookies; CSRF token readable by JS (double-submit pattern)."""
     common = {
         "httponly": True,
         "secure": _cookie_secure(),
-        "samesite": "lax",
+        "samesite": _cookie_samesite(),
         "path": "/",
     }
     response.set_cookie(ACCESS_COOKIE, access_token, max_age=settings.access_token_ttl_minutes * 60, **common)
@@ -102,7 +110,7 @@ def set_auth_cookies(response, access_token: str, refresh_token: str, csrf_token
         max_age=settings.refresh_token_ttl_days * 86400,
         httponly=False,
         secure=_cookie_secure(),
-        samesite="lax",
+        samesite=_cookie_samesite(),
         path="/",
     )
 

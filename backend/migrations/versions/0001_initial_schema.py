@@ -242,7 +242,7 @@ def upgrade() -> None:
         sa.Column("published_at", sa.DateTime(timezone=True)),
         *_ts(),
         sa.CheckConstraint(
-            "view_count >= 0 AND like_count >= 0 AND comment_count >= 0", name="counters_non_negative"
+            "view_count >= 0 AND like_count >= 0 AND comment_count >= 0", name="videos_counters_non_negative"
         ),
     )
     op.create_index("ix_videos_owner_id", "videos", ["owner_id"])
@@ -305,7 +305,7 @@ def upgrade() -> None:
         sa.Column("user_id", sa.Uuid(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
         sa.Column("video_id", sa.Uuid(), sa.ForeignKey("videos.id", ondelete="CASCADE"), nullable=False),
         _created_at(),
-        sa.UniqueConstraint("user_id", "video_id", name="user_video"),
+        sa.UniqueConstraint("user_id", "video_id", name="uq_likes_user_video"),
     )
     op.create_index("ix_likes_user_id", "likes", ["user_id"])
     op.create_index("ix_likes_video_id", "likes", ["video_id"])
@@ -338,7 +338,7 @@ def upgrade() -> None:
         sa.Column("video_id", sa.Uuid(), sa.ForeignKey("videos.id", ondelete="CASCADE"), nullable=False),
         sa.Column("collection", sa.String(60), server_default="Watch later", nullable=False),
         _created_at(),
-        sa.UniqueConstraint("user_id", "video_id", name="user_video"),
+        sa.UniqueConstraint("user_id", "video_id", name="uq_saved_videos_user_video"),
     )
     op.create_index("ix_saved_videos_user_id", "saved_videos", ["user_id"])
     op.create_index("ix_saved_videos_video_id", "saved_videos", ["video_id"])
@@ -432,7 +432,7 @@ def upgrade() -> None:
         sa.Column("score", sa.Float(), server_default=sa.text("0"), nullable=False),
         sa.Column("submitted_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         *_ts(),
-        sa.CheckConstraint("vote_count >= 0 AND like_count >= 0", name="counters_non_negative"),
+        sa.CheckConstraint("vote_count >= 0 AND like_count >= 0", name="challenges_counters_non_negative"),
     )
     op.create_index("ix_challenge_entries_challenge_id", "challenge_entries", ["challenge_id"])
     op.create_index("ix_challenge_entries_user_id", "challenge_entries", ["user_id"])

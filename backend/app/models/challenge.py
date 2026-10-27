@@ -143,7 +143,7 @@ class ChallengeEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     media = relationship("MediaAsset", lazy="joined")
 
     __table_args__ = (
-        CheckConstraint("vote_count >= 0 AND like_count >= 0", name="counters_non_negative"),
+        CheckConstraint("vote_count >= 0 AND like_count >= 0", name="challenges_counters_non_negative"),
         Index("ix_challenge_entries_challenge_votes", "challenge_id", "vote_count"),
         Index("ix_challenge_entries_user_created", "user_id", "created_at"),
     )

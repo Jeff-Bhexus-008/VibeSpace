@@ -62,7 +62,7 @@ class Video(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     media = relationship("MediaAsset", lazy="joined")
 
     __table_args__ = (
-        CheckConstraint("view_count >= 0 AND like_count >= 0 AND comment_count >= 0", name="counters_non_negative"),
+        CheckConstraint("view_count >= 0 AND like_count >= 0 AND comment_count >= 0", name="videos_counters_non_negative"),
         Index("ix_videos_feed", "status", "visibility", "published_at"),
         Index("ix_videos_owner_published", "owner_id", "published_at"),
         Index("ix_videos_learn", "is_learn_content", "learn_category", "published_at"),

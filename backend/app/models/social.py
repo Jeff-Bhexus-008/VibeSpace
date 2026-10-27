@@ -76,7 +76,7 @@ class Like(UUIDPrimaryKeyMixin, Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
     )
 
-    __table_args__ = (UniqueConstraint("user_id", "video_id", name="user_video"),)
+    __table_args__ = (UniqueConstraint("user_id", "video_id", name="uq_likes_user_video"),)
 
 
 class Comment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -117,7 +117,7 @@ class SavedVideo(UUIDPrimaryKeyMixin, Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("user_id", "video_id", name="user_video"),
+        UniqueConstraint("user_id", "video_id", name="uq_saved_videos_user_video"),
         Index("ix_saved_videos_user_collection", "user_id", "collection"),
     )
 

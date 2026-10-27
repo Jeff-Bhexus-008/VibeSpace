@@ -65,7 +65,10 @@ class Settings(BaseSettings):
 
     @property
     def cors_origin_list(self) -> list[str]:
-        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+        # Browsers always send the Origin header without a trailing slash
+        # ("https://app.vercel.app"), and Starlette compares origins as exact
+        # strings, so any configured value must be normalized the same way.
+        return [origin.strip().rstrip("/") for origin in self.cors_origins.split(",") if origin.strip()]
 
     @property
     def trusted_host_list(self) -> list[str]:

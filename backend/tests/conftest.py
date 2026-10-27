@@ -110,9 +110,17 @@ def make_user(
 
 
 def login(client: TestClient, user: User, password: str = "StrongPass123") -> dict[str, str]:
+    """Log in and return self-contained headers.
+
+    The shared TestClient keeps ONE cookie jar, so logging in as a second user
+    overwrites the first user's session cookies. Returning the cookies as an
+    explicit Cookie header makes every request independent of whatever is in
+    the jar, which is what a real browser (one jar per user) experiences.
+    """
     response = client.post("/api/v1/auth/login", json={"email": user.email, "password": password})
     assert response.status_code == 200, response.text
-    return {"X-CSRF-Token": response.json()["csrf_token"]}
+    cookies = "; ".join(f"{name}={response.cookies[name]}" for name in ("vs_access", "vs_refresh", "vs_csrf"))
+    return {"X-CSRF-Token": response.json()["csrf_token"], "Cookie": cookies}
 
 
 def make_media(db: Session, owner: User, *, ready: bool = True, kind: MediaKind = MediaKind.video) -> MediaAsset:
