@@ -58,6 +58,8 @@ def storage_status() -> dict:
 
     return {
         "storage_configured": settings.storage_configured,
+        "storage_backend": settings.storage_backend,
+        "public_delivery": bool(settings.s3_public_base_url),
         "bucket": settings.s3_bucket if settings.storage_configured else None,
         "max_bytes": settings.upload_max_bytes,
         "video_processing_enabled": settings.video_processing_enabled,

@@ -29,6 +29,17 @@ from app.services import storage
 from app.services.voting import accepts_entries, accepts_votes
 
 
+def asset_media_url(asset: MediaAsset | None, *, thumbnail: bool = False, private: bool = False) -> str | None:
+    """Durable URL for an uploaded asset (public CDN, or our re-signing stream route)."""
+    if asset is None:
+        return None
+    key = asset.thumbnail_key if thumbnail else asset.storage_key
+    try:
+        return storage.stable_media_url(asset.id, key, thumbnail=thumbnail, private=private)
+    except ServiceUnavailableError:
+        return None
+
+
 def media_url(key: str | None, *, private: bool = False) -> str | None:
     if not key:
         return None
@@ -110,8 +121,8 @@ def video_out(
         save_count=video.save_count,
         share_count=video.share_count,
         duration_seconds=asset.duration_seconds if asset else None,
-        thumbnail_url=media_url(asset.thumbnail_key) if asset else None,
-        playback_url=media_url(asset.storage_key),
+        thumbnail_url=asset_media_url(asset, thumbnail=True),
+        playback_url=asset_media_url(asset),
         published_at=video.published_at,
         created_at=video.created_at,
         author=author_summary(author),
@@ -177,7 +188,7 @@ def media_out(asset: MediaAsset, *, private: bool = False) -> MediaAssetOut:
         width=asset.width,
         height=asset.height,
         detected_content_type=asset.detected_content_type,
-        thumbnail_url=media_url(asset.thumbnail_key),
+        thumbnail_url=asset_media_url(asset, thumbnail=True),
         playback_url=playback,
         renditions=asset.renditions or [],
         processing_error=asset.processing_error,
@@ -266,8 +277,8 @@ def entry_out(
         comment_count=entry.comment_count,
         score=entry.score,
         submitted_at=entry.submitted_at,
-        thumbnail_url=media_url(asset.thumbnail_key) if asset else None,
-        playback_url=media_url(asset.storage_key) if asset else None,
+        thumbnail_url=asset_media_url(asset, thumbnail=True),
+        playback_url=asset_media_url(asset),
         disqualification_reason=entry.disqualification_reason,
         user=challenge_creator(user or getattr(entry, "submitter", None)),
         is_owner=(viewer is not None and viewer.id == entry.user_id),

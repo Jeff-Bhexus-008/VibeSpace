@@ -29,7 +29,9 @@ def test_unconfigured_storage_returns_a_clear_setup_error(api, monkeypatch):
     assert response.status_code == 503
     body = response.json()
     assert body["error"]["code"] == "service_unavailable"
-    assert "S3_BUCKET" in body["error"]["details"]["missing"]
+    missing = body["error"]["details"]["missing"]
+    assert "R2_BUCKET_NAME" in missing  # Cloudflare R2 is the primary backend
+    assert "S3_BUCKET" in body["error"]["details"].get("alternative", [])
 
 
 def test_upload_ticket_rejects_wrong_extension_and_oversized_files(api, monkeypatch):

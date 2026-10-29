@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -36,6 +37,7 @@ PURPOSE_KINDS = {
 
 def create_upload_ticket(db: Session, user: User, payload: UploadTicketRequest) -> UploadTicket:
     storage.require_configured()
+    _cleanup_abandoned_uploads(db, user)
 
     allowed_kinds = PURPOSE_KINDS.get(payload.purpose, {payload.kind})
     if payload.kind not in allowed_kinds:
@@ -180,7 +182,7 @@ def _enqueue_processing(asset_id: uuid.UUID) -> None:
 def asset_to_out(asset: MediaAsset, *, private: bool = False) -> MediaAssetOut:
     playback = None
     if asset.status == MediaStatus.ready:
-        playback = storage.media_url(asset.storage_key, private=private)
+        playback = storage.stable_media_url(asset.id, asset.storage_key, private=private)
     return MediaAssetOut(
         id=asset.id,
         kind=asset.kind.value,
@@ -191,7 +193,7 @@ def asset_to_out(asset: MediaAsset, *, private: bool = False) -> MediaAssetOut:
         width=asset.width,
         height=asset.height,
         detected_content_type=asset.detected_content_type,
-        thumbnail_url=storage.media_url(asset.thumbnail_key) if asset.thumbnail_key else None,
+        thumbnail_url=storage.stable_media_url(asset.id, asset.thumbnail_key, thumbnail=True, private=private),
         playback_url=playback,
         renditions=asset.renditions or [],
         processing_error=asset.processing_error,
@@ -207,3 +209,37 @@ def list_pending_assets(db: Session, user: User) -> list[MediaAsset]:
         .limit(50)
     )
     return list(db.execute(stmt).scalars())
+
+ABANDONED_AFTER_HOURS = 24
+
+
+def _cleanup_abandoned_uploads(db: Session, user: User) -> None:
+    """Best-effort sweep of tickets the browser never finished.
+
+    A ticket is created before the browser starts PUTting bytes. If the user closes
+    the tab, the row would linger forever and (for buckets using incomplete multipart
+    uploads) so could partial objects. Failures here must never block a new upload.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=ABANDONED_AFTER_HOURS)
+    try:
+        stale = list(
+            db.execute(
+                select(MediaAsset).where(
+                    MediaAsset.owner_id == user.id,
+                    MediaAsset.status.in_([MediaStatus.pending, MediaStatus.uploading, MediaStatus.failed]),
+                    MediaAsset.created_at < cutoff,
+                )
+            ).scalars()
+        )
+        for asset in stale:
+            key, thumbnail = asset.storage_key, asset.thumbnail_key
+            db.delete(asset)
+            db.commit()
+            for object_key in filter(None, [key, thumbnail]):
+                try:
+                    storage.delete_object(object_key)
+                except Exception:  # pragma: no cover - storage outage
+                    logger.warning("could not remove abandoned object %s", object_key)
+    except Exception:  # pragma: no cover - cleanup must never fail a ticket
+        db.rollback()
+        logger.exception("abandoned-upload cleanup failed")

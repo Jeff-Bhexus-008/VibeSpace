@@ -26,9 +26,18 @@ _client = None
 def require_configured() -> None:
     if not settings.storage_configured:
         raise ServiceUnavailableError(
-            "Media storage is not configured yet. Set S3_BUCKET, S3_ACCESS_KEY_ID and "
-            "S3_SECRET_ACCESS_KEY (see .env.example) before uploading.",
-            details={"missing": ["S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"]},
+            "Media storage is not configured yet. Set the Cloudflare R2 credentials "
+            "(R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME) or the "
+            "generic S3_BUCKET / S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY (see .env.example).",
+            details={
+                "missing": [
+                    "R2_ACCOUNT_ID",
+                    "R2_ACCESS_KEY_ID",
+                    "R2_SECRET_ACCESS_KEY",
+                    "R2_BUCKET_NAME",
+                ],
+                "alternative": ["S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"],
+            },
         )
 
 
@@ -142,3 +151,27 @@ def delete_object(key: str) -> None:
         get_client().delete_object(Bucket=settings.s3_bucket, Key=key)
     except (BotoCoreError, ClientError) as exc:  # pragma: no cover
         logger.warning("delete failed for %s: %s", key, exc)
+
+def stable_media_url(
+    asset_id: uuid.UUID,
+    key: str | None,
+    *,
+    thumbnail: bool = False,
+    private: bool = False,
+) -> str | None:
+    """Durable URL for a stored asset (never a short-lived upload URL).
+
+    - Public base URL configured (R2 public domain / CDN): serve the object straight
+      from storage, so the URL never expires and byte-range requests work natively.
+    - Private bucket: point at our own /media/{id}/stream endpoint, which authorises
+      the request and redirects to a freshly signed URL each time. The URL stored in
+      the database therefore stays valid for the life of the asset.
+    """
+    if not key:
+        return None
+    if private:
+        return create_presigned_get(key)
+    if settings.s3_public_base_url:
+        return public_url(key)
+    suffix = "thumbnail" if thumbnail else "stream"
+    return f"{settings.backend_url.rstrip('/')}/api/v1/media/{asset_id}/{suffix}"

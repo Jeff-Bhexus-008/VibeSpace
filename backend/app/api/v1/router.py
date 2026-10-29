@@ -13,6 +13,7 @@ from app.api.v1.endpoints import (
     discovery,
     health,
     media,
+    media_stream,
     messaging,
     moderation,
     social,
@@ -26,6 +27,7 @@ api_router.include_router(health.router)
 api_router.include_router(auth.router)
 api_router.include_router(users.router)
 api_router.include_router(media.router)
+api_router.include_router(media_stream.router)
 api_router.include_router(videos.router)
 api_router.include_router(social.router)
 api_router.include_router(discovery.router)

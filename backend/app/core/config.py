@@ -43,6 +43,15 @@ class Settings(BaseSettings):
     upload_url_ttl_seconds: int = 900
     media_url_ttl_seconds: int = 3600
 
+    # Cloudflare R2 (S3-compatible). When these are set they fill in the S3_*
+    # settings above, so no separate storage code path is needed.
+    r2_account_id: str | None = None
+    r2_access_key_id: str | None = None
+    r2_secret_access_key: str | None = None
+    r2_bucket_name: str | None = None
+    r2_public_base_url: str | None = None
+    r2_endpoint_url: str | None = None
+
     # Video processing -------------------------------------------------------
     ffmpeg_binary: str = "ffmpeg"
     ffprobe_binary: str = "ffprobe"
@@ -73,6 +82,28 @@ class Settings(BaseSettings):
     @property
     def trusted_host_list(self) -> list[str]:
         return [host.strip() for host in self.trusted_hosts.split(",") if host.strip()]
+
+    def model_post_init(self, __context: object) -> None:
+        """Map Cloudflare R2 settings onto the generic S3-compatible ones."""
+        if self.r2_account_id and not self.r2_endpoint_url:
+            self.r2_endpoint_url = f"https://{self.r2_account_id}.r2.cloudflarestorage.com"
+        if self.r2_endpoint_url:
+            self.s3_endpoint_url = self.r2_endpoint_url
+            self.s3_region = "auto"
+        if self.r2_bucket_name:
+            self.s3_bucket = self.r2_bucket_name
+        if self.r2_access_key_id:
+            self.s3_access_key_id = self.r2_access_key_id
+        if self.r2_secret_access_key:
+            self.s3_secret_access_key = self.r2_secret_access_key
+        if self.r2_public_base_url:
+            self.s3_public_base_url = self.r2_public_base_url.rstrip("/")
+
+    @property
+    def storage_backend(self) -> str | None:
+        if not self.storage_configured:
+            return None
+        return "cloudflare_r2" if self.r2_account_id else "s3_compatible"
 
     @property
     def rendition_list(self) -> list[str]:
